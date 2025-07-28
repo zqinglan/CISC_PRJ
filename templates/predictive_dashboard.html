@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Treasury Yield Analysis Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .chart-container {
+            height: 600px;
+            margin-bottom: 30px;
+        }
+
+        .stats-card {
+            margin-bottom: 20px;
+        }
+
+        .forecast-card {
+            border-left: 4px solid #007bff;
+        }
+
+        .alert-card {
+            border-left: 4px solid #dc3545;
+        }
+
+        .validation-card {
+            border-left: 4px solid #28a745;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .alert-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+
+        .alert-high {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+        }
+
+        .alert-medium {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+        }
+
+        .forecast-confidence {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .cache-status {
+            font-size: 0.8em;
+            padding: 5px 10px;
+            border-radius: 15px;
+            display: inline-block;
+        }
+
+        .cache-available {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .cache-unavailable {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Accessibility improvements */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .focus-visible {
+            outline: 2px solid #007bff;
+            outline-offset: 2px;
+        }
+
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+            .chart-container {
+                border: 2px solid #000;
+            }
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark" role="navigation" aria-label="Main navigation">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/" aria-label="Treasury Yield Analysis Home">
+                <i class="fas fa-chart-line"></i> Enhanced Treasury Yield Analysis
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/cycles">Cutting Cycles</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/analysis">Custom Analysis</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/predictive" aria-current="page">Predictive Dashboard</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <span id="cache-status" class="cache-status cache-unavailable">Cache: Checking...</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <header>
+            <h1>Treasury Yield Predictive Dashboard</h1>
+            <p class="lead">Advanced yield forecasting with VAR models, confidence intervals, and real-time alerts</p>
+        </header>
+
+        <!-- Loading indicator -->
+        <div id="loading" class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Processing data and generating forecasts...</p>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-cogs"></i> Control Panel</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label for="forecast-horizon" class="form-label">Forecast Horizon (days)</label>
+                                <select id="forecast-horizon" class="form-select">
+                                    <option value="5">5 days</option>
+                                    <option value="10">10 days</option>
+                                    <option value="21">21 days</option>
+                                    <option value="30">30 days</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="confidence-level" class="form-label">Confidence Level</label>
+                                <select id="confidence-level" class="form-select">
+                                    <option value="0.90">90%</option>
+                                    <option value="0.95" selected>95%</option>
+                                    <option value="0.99">99%</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="alert-threshold" class="form-label">Alert Threshold (%)</label>
+                                <input type="number" id="alert-threshold" class="form-control" value="2" min="0.1"
+                                    max="10" step="0.1">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button id="generate-forecast" class="btn btn-primary">
+                                        <i class="fas fa-magic"></i> Generate Forecast
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Section -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card alert-card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-exclamation-triangle"></i> Real-Time Alerts</h5>
+                        <button id="check-alerts" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-sync"></i> Check Alerts
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="alerts-container">
+                            <p class="text-muted">No alerts detected. Click "Check Alerts" to scan for deviations.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card forecast-card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-line"></i> Yield Forecast with Confidence Intervals</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="forecast-chart" class="chart-container">
+                            <p class="text-muted text-center">Generate a forecast to view the chart</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card validation-card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-bar"></i> Model Validation</h5>
+                        <button id="run-validation" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-play"></i> Run Validation
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="validation-chart" class="chart-container">
+                            <p class="text-muted text-center">Run validation to view model performance</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Forecast Summary -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card stats-card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-info-circle"></i> Forecast Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="forecast-summary">
+                            <p class="text-muted">No forecast available. Generate a forecast to view summary.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentForecastId = null;
+        let currentValidationId = null;
+
+        // Utility functions
+        function showLoading() {
+            document.getElementById('loading').classList.add('show');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('show');
+        }
+
+        function showError(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+        }
+
+        function showSuccess(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+        }
+
+        // Cache status check
+        async function checkCacheStatus() {
+            try {
+                const response = await fetch('/api/cache/status');
+                const status = await response.json();
+
+                const statusElement = document.getElementById('cache-status');
+                if (status.status === 'available') {
+                    statusElement.className = 'cache-status cache-available';
+                    statusElement.textContent = `Cache: Available (${status.total_keys} keys)`;
+                } else {
+                    statusElement.className = 'cache-status cache-unavailable';
+                    statusElement.textContent = 'Cache: Unavailable';
+                }
+            } catch (error) {
+                console.error('Error checking cache status:', error);
+            }
+        }
+
+        // Generate forecast
+        async function generateForecast() {
+            showLoading();
+
+            try {
+                const horizon = document.getElementById('forecast-horizon').value;
+                const confidence = document.getElementById('confidence-level').value;
+
+                const response = await fetch('/api/forecast/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        horizon: parseInt(horizon),
+                        confidence_level: parseFloat(confidence)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    showError(result.error);
+                } else {
+                    currentForecastId = result.forecast_id;
+                    showSuccess('Forecast generated successfully!');
+                    updateForecastChart();
+                    updateForecastSummary(result.summary);
+                }
+            } catch (error) {
+                showError('Error generating forecast: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Update forecast chart
+        async function updateForecastChart() {
+            if (!currentForecastId) return;
+
+            try {
+                const response = await fetch(`/api/forecast/${currentForecastId}/chart`);
+                const result = await response.json();
+
+                if (result.error) {
+                    showError(result.error);
+                } else {
+                    const chartData = JSON.parse(result.chart);
+                    Plotly.newPlot('forecast-chart', chartData.data, chartData.layout);
+                }
+            } catch (error) {
+                showError('Error loading forecast chart: ' + error.message);
+            }
+        }
+
+        // Update forecast summary
+        function updateForecastSummary(summary) {
+            const container = document.getElementById('forecast-summary');
+
+            if (!summary) {
+                container.innerHTML = '<p class="text-muted">No forecast summary available.</p>';
+                return;
+            }
+
+            let html = '<div class="row">';
+
+            // Model quality metrics
+            html += '<div class="col-12 mb-3">';
+            html += '<h6>Model Quality:</h6>';
+            html += `<p class="mb-1">AIC: ${summary.model_quality.aic.toFixed(2)}</p>`;
+            html += `<p class="mb-1">BIC: ${summary.model_quality.bic.toFixed(2)}</p>`;
+            html += `<p class="mb-1">Lags: ${summary.model_quality.lags}</p>`;
+            html += '</div>';
+
+            // Forecast values
+            html += '<div class="col-12">';
+            html += '<h6>Forecast Values:</h6>';
+
+            for (const [tenor, forecast] of Object.entries(summary.forecasts)) {
+                const meanForecast = forecast.mean_forecast.toFixed(2);
+                const volatility = forecast.forecast_volatility.toFixed(2);
+
+                html += `<div class="mb-2">`;
+                html += `<strong>${tenor}:</strong> ${meanForecast}% ± ${volatility}%`;
+                html += '</div>';
+            }
+
+            html += '</div>';
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // Run validation
+        async function runValidation() {
+            showLoading();
+
+            try {
+                const response = await fetch('/api/forecast/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        train_window: 50,  // Reduced from 252
+                        test_window: 10,   // Reduced from 21
+                        forecast_horizon: 5
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    showError(result.error);
+                } else {
+                    currentValidationId = result.validation_id;
+                    showSuccess('Validation completed successfully!');
+                    updateValidationChart();
+                }
+            } catch (error) {
+                showError('Error running validation: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Update validation chart
+        async function updateValidationChart() {
+            if (!currentValidationId) return;
+
+            try {
+                const response = await fetch(`/api/validation/${currentValidationId}/chart`);
+                const result = await response.json();
+
+                if (result.error) {
+                    showError(result.error);
+                } else {
+                    const chartData = JSON.parse(result.chart);
+                    Plotly.newPlot('validation-chart', chartData.data, chartData.layout);
+                }
+            } catch (error) {
+                showError('Error loading validation chart: ' + error.message);
+            }
+        }
+
+        // Check alerts
+        async function checkAlerts() {
+            try {
+                const threshold = document.getElementById('alert-threshold').value;
+
+                const response = await fetch('/api/alerts/check', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        threshold: parseFloat(threshold) / 100
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    showError(result.error);
+                } else {
+                    updateAlerts(result.alerts);
+                }
+            } catch (error) {
+                showError('Error checking alerts: ' + error.message);
+            }
+        }
+
+        // Update alerts display
+        function updateAlerts(alerts) {
+            const container = document.getElementById('alerts-container');
+
+            if (alerts.length === 0) {
+                container.innerHTML = '<p class="text-muted">No alerts detected.</p>';
+                return;
+            }
+
+            let html = '';
+            alerts.forEach(alert => {
+                const severityClass = alert.severity === 'high' ? 'alert-high' : 'alert-medium';
+                html += `
+                    <div class="alert-item ${severityClass}">
+                        <strong>${alert.tenor}:</strong> 
+                        Actual: ${alert.actual.toFixed(2)}% | 
+                        Forecast: ${alert.forecast.toFixed(2)}% | 
+                        Deviation: ${alert.deviation.toFixed(2)}%
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function () {
+            // Initialize
+            checkCacheStatus();
+
+            // Button event listeners
+            document.getElementById('generate-forecast').addEventListener('click', generateForecast);
+            document.getElementById('run-validation').addEventListener('click', runValidation);
+            document.getElementById('check-alerts').addEventListener('click', checkAlerts);
+
+            // Keyboard accessibility
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && e.target.matches('button')) {
+                    e.target.click();
+                }
+            });
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
